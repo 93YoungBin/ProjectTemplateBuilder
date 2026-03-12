@@ -10,7 +10,7 @@
     <ProductVersion>10.0.20506</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <RootNamespace></RootNamespace>
-    <ProjectGuid>{E5BCB566-46C6-30CF-3828-08870C6822EA}</ProjectGuid>
+    <ProjectGuid>{2645E17C-5C6A-9BE7-8DD2-BAD4936CC46F}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <AssemblyName>MToon.Editor</AssemblyName>
@@ -401,6 +401,10 @@
     </Reference>
     <Reference Include="UnityEditor.Graphs">
       <HintPath>C:\Users\Bin\Documents\Unity\2022.3.62f3\Editor\Data\Managed\UnityEditor.Graphs.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEditor.WebGL.Extensions">
+      <HintPath>C:\Users\Bin\Documents\Unity\2022.3.62f3\Editor\Data\PlaybackEngines\WebGLSupport\UnityEditor.WebGL.Extensions.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEditor.Android.Extensions">
@@ -982,7 +986,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="MToon.csproj">
-      <Project>{A32A3116-E989-7F6A-590F-3501C1E320BD}</Project>
+      <Project>{95B0CA78-45FE-DBA6-F550-10135D7AE892}</Project>
       <Name>MToon</Name>
     </ProjectReference>
   </ItemGroup>

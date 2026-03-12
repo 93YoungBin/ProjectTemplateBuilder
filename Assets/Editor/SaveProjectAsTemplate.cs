@@ -1,257 +1,309 @@
 using System;
-using System.Collections;
 using System.IO;
 using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
-    public class SaveProjectAsTemplate : EditorWindow
+/// <summary>
+/// 현재 Unity 프로젝트를 Unity Template(.tgz) 형태로 Export하는 Editor Tool
+/// 
+/// 주요 기능
+/// - Unity 내부 API SaveProjectAsTemplate 호출
+/// - Template Package 구조 자동 생성
+/// - 불필요 파일 제거
+/// - 7zip을 이용한 tgz 압축 생성
+/// - Unity Template 폴더로 이동
+/// </summary>
+
+public class SaveProjectAsTemplate : EditorWindow
+{
+    // Unity Editor 내부 Template 저장 경로
+    private static readonly string UnityTemplatePath = Path.Combine(
+        Path.GetDirectoryName(EditorApplication.applicationPath),
+        "Data",
+        "Resources",
+        "PackageManager",
+        "ProjectTemplates"
+    );
+
+    private const string SevenZipPath = @"C:\Program Files\7-Zip\7z.exe";
+
+    // 작업 경로
+    private string targetPath;
+    private string packagePath;
+    private string folderPath;
+    private string zipName;
+
+    // Template Metadata
+    private string templateName = "mytemplate";
+    private string templateDisplayName = "My Template";
+    private string templateDescription = "Unity Template";
+    private string templateVersion = "1.0.0";
+
+    private string templateDefaultScene;
+    private SceneAsset templateDefaultSceneAsset;
+
+    #region Window
+
+    [MenuItem("Tools/Template/Save Project As Template")]
+    private static void ShowWindow()
     {
-        private static readonly string UnityEditorApplicationProjectTemplatesPath = Path.Combine(
-            Path.GetDirectoryName(EditorApplication.applicationPath),
-            "Data",
-            "Resources",
-            "PackageManager",
-            "ProjectTemplates"
-        );
+        var window = GetWindow<SaveProjectAsTemplate>();
+        window.titleContent = new GUIContent("Template Export");
+        window.minSize = new Vector2(500, 300);
+    }
 
-        private static readonly string[] TemplateFolderNames = new string[]
+    #endregion
+
+    #region GUI
+
+    private void OnGUI()
+    {
+        DrawPathSection();
+        DrawTemplateInfo();
+        DrawButtons();
+    }
+
+    /// <summary>
+    /// 경로 선택 GUI
+    /// </summary>
+    private void DrawPathSection()
+    {
+        GUILayout.Label("Target Folder", EditorStyles.boldLabel);
+
+        if (GUILayout.Button("Select Target Folder"))
         {
-            "Assets",
-            "Packages",
-            "ProjectSettings",
-        };
+            targetPath = EditorUtility.SaveFolderPanel(
+                "Choose target folder",
+                UnityTemplatePath,
+                "");
 
-        private string folderPath;
-        private string packagePath;
-        private string zipName;
-
-        private string targetPath;
-        private string templateName = "TestTemplate";
-        private string templateDisplayName = "Test Template Project";
-        private string templateDescription = "Development Template for VRPlayer";
-        private string templateDefaultScene;
-        private string templateVersion = "0.0.1";
-        private SceneAsset templateDefaultSceneAsset;
-
-        [MenuItem("Template/Save Template")]
-        private static void ShowWindow()
-        {
-            var window = EditorWindow.GetWindow<SaveProjectAsTemplate>();
-            window.titleContent = new GUIContent("Save Template");
-            window.minSize = new Vector2(500, 270);
-            window.Show();
-
+            LoadTemplateData();
         }
 
-        private void InvokeSaveProjectAsTemplate()
+        EditorGUI.BeginChangeCheck();
+
+        targetPath = EditorGUILayout.TextField("Path", targetPath);
+
+        if (EditorGUI.EndChangeCheck())
         {
-            Assembly editorAssembly = Assembly.GetAssembly(typeof(UnityEditor.Editor));
-            Type editorUtilityType = editorAssembly.GetType("UnityEditor.EditorUtility");
-
-            MethodInfo methodInfo = editorUtilityType.GetMethod("SaveProjectAsTemplate", BindingFlags.Static | BindingFlags.NonPublic);
-            methodInfo.Invoke(editorUtilityType, new object[] { folderPath, templateName, templateDisplayName, templateDescription, templateDefaultScene, templateVersion });
+            LoadTemplateData();
         }
 
-        private void DeleteProjectVersionTxt()
+        if (!string.IsNullOrEmpty(targetPath))
         {
-            var projectVersionTxtPath = Path.Combine(folderPath, "ProjectSettings", "ProjectVersion.txt");
-
-            if (File.Exists(projectVersionTxtPath))
-            {
-                File.Delete(projectVersionTxtPath);
-            }
-            else
-            {
-                Debug.LogErrorFormat("File ProjectVersion.txt does not exist at path: {0}", projectVersionTxtPath);
-            }
+            zipName = $"com.unity.template.{templateName}-{templateVersion}";
+            packagePath = Path.Combine(targetPath, "package");
+            folderPath = Path.Combine(packagePath, "ProjectData~");
         }
+    }
 
-        private void SetTemplateDataFromPackageJson()
+    /// <summary>
+    /// Template Metadata GUI
+    /// </summary>
+    private void DrawTemplateInfo()
+    {
+        GUILayout.Space(10);
+        GUILayout.Label("Template Info", EditorStyles.boldLabel);
+
+        templateName = EditorGUILayout.TextField("Name", templateName);
+        templateDisplayName = EditorGUILayout.TextField("Display Name", templateDisplayName);
+        templateDescription = EditorGUILayout.TextField("Description", templateDescription);
+        templateVersion = EditorGUILayout.TextField("Version", templateVersion);
+
+        DrawDefaultSceneGUI();
+    }
+
+    /// <summary>
+    /// Default Scene 설정
+    /// </summary>
+    private void DrawDefaultSceneGUI()
+    {
+        templateDefaultSceneAsset = (SceneAsset)EditorGUILayout.ObjectField(
+            "Default Scene",
+            templateDefaultSceneAsset,
+            typeof(SceneAsset),
+            false);
+
+        templateDefaultScene = templateDefaultSceneAsset
+            ? AssetDatabase.GetAssetPath(templateDefaultSceneAsset)
+            : null;
+
+        using (new EditorGUI.DisabledScope(true))
         {
-            var packageJsonPath = Path.Combine(targetPath, "package.json");
-            if (File.Exists(packageJsonPath))
-            {
-                var packageJson = File.ReadAllText(packageJsonPath);
-                var templateData = JsonUtility.FromJson<TemplateData>(packageJson);
-                templateName = templateData.Name;
-                templateDisplayName = templateData.DisplayName;
-                templateDescription = templateData.Description;
-                templateDefaultScene = templateData.DefaultScene;
-                templateVersion = templateData.Version;
-                SetDefaultSceneAssetFromPath();
-            }
+            EditorGUILayout.TextField("Scene Path", templateDefaultScene);
         }
+    }
 
-        private void SetDefaultSceneAssetFromPath()
+    private void DrawButtons()
+    {
+        GUILayout.Space(10);
+
+        if (GUILayout.Button("Save Template"))
+            SaveTemplate(false);
+
+        if (GUILayout.Button("Save And Install Template"))
+            SaveTemplate(true);
+    }
+
+    #endregion
+
+    #region Template Save
+
+    /// <summary>
+    /// Template 저장 메인 함수
+    /// </summary>
+    private void SaveTemplate(bool installToUnity)
+    {
+        if (string.IsNullOrEmpty(targetPath))
         {
-            if (templateDefaultScene != String.Empty)
-            {
-                templateDefaultSceneAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>(templateDefaultScene);
-                Debug.AssertFormat(templateDefaultSceneAsset != null, "Failed to load scene asset at path from package.json, path: {0}", templateDefaultScene);
-            }
-            else
-            {
-                templateDefaultSceneAsset = null;
-            }
+            Debug.LogError("Target path is empty");
+            return;
         }
 
-        private void DefaultSceneGUI()
+        PrepareDirectory();
+
+        AssetDatabase.SaveAssets();
+
+        InvokeSaveProjectAsTemplate();
+
+        DeleteProjectVersion();
+
+        MovePackageJson();
+
+        DeleteEditorFolder();
+
+        MakeTgz(targetPath, zipName);
+
+        if (installToUnity)
         {
-            templateDefaultSceneAsset = (SceneAsset)EditorGUILayout.ObjectField("Default scene asset:", templateDefaultSceneAsset, typeof(SceneAsset), false);
-            if (templateDefaultSceneAsset != null)
-            {
-                templateDefaultScene = AssetDatabase.GetAssetPath(templateDefaultSceneAsset);
-            }
-            else
-            {
-                templateDefaultScene = null;
-            }
-
-            using (new EditorGUI.DisabledGroupScope(true))
-            {
-                EditorGUILayout.TextField("Default scene:", templateDefaultScene);
-            }
+            MoveToUnityTemplateFolder(
+                Path.Combine(targetPath, zipName + ".tgz"));
         }
+    }
 
-        private void OnGUI()
+    /// <summary>
+    /// 작업 폴더 준비
+    /// </summary>
+    private void PrepareDirectory()
+    {
+        if (Directory.Exists(packagePath))
+            Directory.Delete(packagePath, true);
+
+        Directory.CreateDirectory(folderPath);
+    }
+
+    #endregion
+
+    #region Unity Internal API
+
+    /// <summary>
+    /// Unity 내부 API 호출
+    /// EditorUtility.SaveProjectAsTemplate
+    /// </summary>
+    private void InvokeSaveProjectAsTemplate()
+    {
+        Assembly editorAssembly = Assembly.GetAssembly(typeof(Editor));
+
+        Type editorUtilityType =
+            editorAssembly.GetType("UnityEditor.EditorUtility");
+
+        MethodInfo method =
+            editorUtilityType.GetMethod(
+                "SaveProjectAsTemplate",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+        method.Invoke(editorUtilityType, new object[]
         {
-            if (GUILayout.Button("Select Target Folder"))
-            {
-                targetPath = EditorUtility.SaveFolderPanel("Choose target folder", UnityEditorApplicationProjectTemplatesPath, String.Empty);
-                SetTemplateDataFromPackageJson();
-            }
+            folderPath,
+            templateName,
+            templateDisplayName,
+            templateDescription,
+            templateDefaultScene,
+            templateVersion
+        });
+    }
 
-            using (var check = new EditorGUI.ChangeCheckScope())
-            {
-                targetPath = EditorGUILayout.TextField("Path:", targetPath);
-                if (check.changed)
-                {
-                    SetTemplateDataFromPackageJson();
-                }
-            }
+    #endregion
 
-            if (GUI.changed)
-            {
-                zipName = string.Format("com.unity.template.{0}-{1}", templateName, templateVersion);
-                packagePath = Path.Combine(targetPath,/* zipName, */"package");
-                folderPath = Path.Combine(packagePath, "ProjectData~");
-            }
+    #region Template File Processing
 
-            templateName = EditorGUILayout.TextField("Name:", templateName);
-            templateDisplayName = EditorGUILayout.TextField("Display name:", templateDisplayName);
-            templateDescription = EditorGUILayout.TextField("Description:", templateDescription);
-            DefaultSceneGUI();
-            templateVersion = EditorGUILayout.TextField("Version:", templateVersion);
+    /// <summary>
+    /// ProjectVersion.txt 제거
+    /// </summary>
+    private void DeleteProjectVersion()
+    {
+        string path = Path.Combine(
+            folderPath,
+            "ProjectSettings/ProjectVersion.txt");
 
-            if (GUILayout.Button("Save"))
-            {
-                if (string.IsNullOrWhiteSpace(targetPath))
-                {
-                    return;
-                }
+        if (File.Exists(path))
+            File.Delete(path);
+    }
 
-                if (Directory.Exists(packagePath))
-                {
-                    try
-                    {
-                        Directory.Delete(packagePath, true);
-                    }
-                    catch
-                    {
+    /// <summary>
+    /// package.json 이동
+    /// </summary>
+    private void MovePackageJson()
+    {
+        string source = Path.Combine(folderPath, "package.json");
+        string dest = Path.Combine(packagePath, "package.json");
 
-                    }
-                }
+        if (!File.Exists(source))
+            return;
 
+        if (File.Exists(dest))
+            File.Delete(dest);
 
-                if (!Directory.Exists(folderPath))
-                {
-                    Directory.CreateDirectory(folderPath);
-                }
+        File.Move(source, dest);
+    }
 
-                AssetDatabase.SaveAssets();
-                InvokeSaveProjectAsTemplate();
-                DeleteProjectVersionTxt();
-                MovePackageFile();
-                DeleteEditorFolder();
-                
-                string tgzPath = Path.Combine(targetPath, zipName + ".tgz");
-                MakeTgz(targetPath, zipName);
-        }
-        }
+    /// <summary>
+    /// Editor 폴더 제거
+    /// </summary>
+    private void DeleteEditorFolder()
+    {
+        string editorPath = Path.Combine(folderPath, "Assets/Editor");
 
-        private bool DeleteEditorFolder()
-        {
-            string[] deletePath = new string[4];
-            deletePath[3] = Path.Combine(folderPath, "Assets", "Editor");
-            deletePath[2] = Path.Combine(folderPath, "Assets", "Editor.meta");
-            deletePath[0] = Path.Combine(folderPath, "Assets", "Editor", "SaveProjectAsTemplate.cs");
-            deletePath[1] = Path.Combine(folderPath, "Assets", "Editor", "SaveProjectAsTemplate.cs.meta");
+        if (Directory.Exists(editorPath))
+            Directory.Delete(editorPath, true);
+    }
 
-            foreach (var path in deletePath)
-            {
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                }
-                else if(Directory.Exists(path))
-                {
-                    Directory.Delete(path);
-                }
-            }
-            return true;
-        }
+    #endregion
 
-        private bool MovePackageFile()
-        {
-            string packageJsonName = "package.json";
+    #region Compression
 
-            var packageJsonPath = Path.Combine(folderPath, packageJsonName);
-            var destPath = Path.Combine(packagePath, packageJsonName);
-
-            if (File.Exists(destPath))
-            {
-                File.Delete(destPath);
-            }
-
-            File.Move(packageJsonPath, destPath);
-
-            return true;
-        }
-
+    /// <summary>
+    /// tgz 압축 생성
+    /// </summary>
     private void MakeTgz(string workingDir, string zipName)
     {
-        string sevenZip = @"C:\Program Files\7-Zip\7z.exe";
-
-        if (!File.Exists(sevenZip))
+        if (!File.Exists(SevenZipPath))
         {
-            Debug.LogError("7zip not found: " + sevenZip);
+            Debug.LogError("7zip not installed");
             return;
         }
 
         string tarPath = Path.Combine(workingDir, zipName + ".tar");
         string tgzPath = Path.Combine(workingDir, zipName + ".tgz");
 
-        if (File.Exists(tarPath)) File.Delete(tarPath);
-        if (File.Exists(tgzPath)) File.Delete(tgzPath);
+        DeleteIfExists(tarPath);
+        DeleteIfExists(tgzPath);
 
-        // tar 생성
-        Run7Zip(sevenZip, $"a -ttar \"{tarPath}\" \"package\"", workingDir);
+        Run7Zip($"a -ttar \"{tarPath}\" \"package\"", workingDir);
 
-        // tgz 생성
-        Run7Zip(sevenZip, $"a -tgzip \"{tgzPath}\" \"{zipName}.tar\"", workingDir);
+        Run7Zip($"a -tgzip \"{tgzPath}\" \"{zipName}.tar\"", workingDir);
 
-        if (File.Exists(tarPath))
-            File.Delete(tarPath);
+        DeleteIfExists(tarPath);
 
-        System.Diagnostics.Process.Start(targetPath);
+        System.Diagnostics.Process.Start(workingDir);
     }
 
-    private void Run7Zip(string exe, string args, string workingDir)
+    private void Run7Zip(string args, string workingDir)
     {
         var process = new System.Diagnostics.Process();
 
-        process.StartInfo.FileName = exe;
+        process.StartInfo.FileName = SevenZipPath;
         process.StartInfo.Arguments = args;
         process.StartInfo.WorkingDirectory = workingDir;
         process.StartInfo.CreateNoWindow = true;
@@ -266,34 +318,111 @@ using UnityEngine;
 
         process.WaitForExit();
 
-        Debug.Log(output);
-
         if (!string.IsNullOrEmpty(error))
             Debug.LogError(error);
     }
 
+    private void DeleteIfExists(string path)
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+
+    #endregion
+
+    #region Template Install
+
+    /// <summary>
+    /// Unity Template 폴더 이동
+    /// </summary>
+    private void MoveToUnityTemplateFolder(string tgzPath)
+    {
+        if (!File.Exists(tgzPath))
+        {
+            Debug.LogError("tgz not found");
+            return;
+        }
+
+        string dest = Path.Combine(
+            UnityTemplatePath,
+            Path.GetFileName(tgzPath));
+
+        if (File.Exists(dest))
+            File.Delete(dest);
+
+        File.Move(tgzPath, dest);
+
+        Debug.Log("Template installed");
+
+        System.Diagnostics.Process.Start(UnityTemplatePath);
+    }
+
+    #endregion
+
+    #region Template Data
+
+    /// <summary>
+    /// package.json에서 metadata 로드
+    /// </summary>
+    private void LoadTemplateData()
+    {
+        if (string.IsNullOrEmpty(targetPath))
+            return;
+
+        string packageJsonPath =
+            Path.Combine(targetPath, "package.json");
+
+        if (!File.Exists(packageJsonPath))
+            return;
+
+        try
+        {
+            var json = File.ReadAllText(packageJsonPath);
+
+            var data = JsonUtility.FromJson<TemplateData>(json);
+
+            if (data == null)
+                return;
+
+            templateName = data.Name;
+            templateDisplayName = data.DisplayName;
+            templateDescription = data.Description;
+            templateDefaultScene = data.DefaultScene;
+            templateVersion = data.Version;
+
+            SetDefaultSceneAsset();
+        }
+        catch (Exception e)
+        {
+            Debug.LogError(e);
+        }
+    }
+
+    private void SetDefaultSceneAsset()
+    {
+        if (string.IsNullOrEmpty(templateDefaultScene))
+            return;
+
+        templateDefaultSceneAsset =
+            AssetDatabase.LoadAssetAtPath<SceneAsset>(
+                templateDefaultScene);
+    }
 
     [Serializable]
-        private class TemplateData
-        {
-#pragma warning disable 0649
-            [SerializeField]
-            private string name;
-            [SerializeField]
-            private string displayName;
-            [SerializeField]
-            private string description;
-            [SerializeField]
-            private string defaultScene;
-            [SerializeField]
-            private string version;
-#pragma warning restore 0649
+    private class TemplateData
+    {
+        [SerializeField] private string name;
+        [SerializeField] private string displayName;
+        [SerializeField] private string description;
+        [SerializeField] private string defaultScene;
+        [SerializeField] private string version;
 
-            public string Name { get { return name; } }
-            public string DisplayName { get { return displayName; } }
-            public string Description { get { return description; } }
-            public string DefaultScene { get { return defaultScene; } }
-            public string Version { get { return version; } }
-        }
+        public string Name => name;
+        public string DisplayName => displayName;
+        public string Description => description;
+        public string DefaultScene => defaultScene;
+        public string Version => version;
+    }
+
+    #endregion
 }
-

@@ -10,7 +10,7 @@
     <ProductVersion>10.0.20506</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <RootNamespace></RootNamespace>
-    <ProjectGuid>{B48AD4CE-363B-7320-F9F6-737EAB4DB14B}</ProjectGuid>
+    <ProjectGuid>{780A8FCD-2BD7-2294-6FB0-E73CF1934841}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <AssemblyName>UniHumanoid.Editor</AssemblyName>
@@ -403,6 +403,10 @@
     </Reference>
     <Reference Include="UnityEditor.Graphs">
       <HintPath>C:\Users\Bin\Documents\Unity\2022.3.62f3\Editor\Data\Managed\UnityEditor.Graphs.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEditor.WebGL.Extensions">
+      <HintPath>C:\Users\Bin\Documents\Unity\2022.3.62f3\Editor\Data\PlaybackEngines\WebGLSupport\UnityEditor.WebGL.Extensions.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEditor.Android.Extensions">
@@ -984,15 +988,15 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="VRM.csproj">
-      <Project>{F5301AFA-D336-C682-789F-A15584096991}</Project>
+      <Project>{4B52ED4B-34F0-4C6E-4A0A-E4B11A28040F}</Project>
       <Name>VRM</Name>
     </ProjectReference>
     <ProjectReference Include="UniHumanoid.csproj">
-      <Project>{A03ABABF-6573-D145-6DBC-9397D32014B9}</Project>
+      <Project>{32D23814-F484-147E-6533-4AB691621CC6}</Project>
       <Name>UniHumanoid</Name>
     </ProjectReference>
     <ProjectReference Include="UniGLTF.Utils.csproj">
-      <Project>{2C526532-92B7-3C92-E5D5-388D5E444582}</Project>
+      <Project>{3C407726-61AA-8D74-9A01-7E07D975DCE7}</Project>
       <Name>UniGLTF.Utils</Name>
     </ProjectReference>
   </ItemGroup>
